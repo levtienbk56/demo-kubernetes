@@ -1,0 +1,2 @@
+10.0.2.4 kubernetes_role="master"  ansible_user=azureuser
+10.0.1.4 kubernetes_role="node"  ansible_user=azureuser
