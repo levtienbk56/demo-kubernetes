@@ -151,3 +151,103 @@ kubectl get pod -o wide -A              //check pods created and those namespace
 kubectl create namespace pythonstack    //create new namespace named `pythonstack`
 kubectl get namespace                   //print namespaces list
 ```
+
+
+## lab2.create new service on k8s cluster
+this service has code in gitlab. so first, login to docker registry on both Master and Worker:
+```
+sudo docker login -u git-deploy-token -p XXX registry.gitlab.com/levtienbk56/pythonapp:latest
+```
+
+on **Master** server, create 2 files:
+- `pypod.py`: create a Pod pythonapp that run a python app, on port 8000
+```python
+apiVersion: v1
+kind: Pod
+metadata:
+  name: python1
+  labels:
+    app: app1
+spec:
+  containers:
+  - name: py1
+    image: registry.gitlab.com/levtienbk56/pythonapp:latest
+    resources:
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+    ports:
+    - containerPort: 8000
+```
+- `svcpy.py`: create service on port 80, as a LoadBalance between NodePort 31080 and Pod 8000 (client who access App through NodePort 31080)
+```python
+apiVersion: v1
+kind: Service
+metadata:
+  name: svcpnh
+spec:
+  selector:
+    app: app1   # must have same name as label app1 in Pod script. Service use this selector to direct request to Pod
+  type: NodePort
+  ports:
+  - name: port1
+    port: 80
+    targetPort: 8000
+    nodePort: 31080
+```
+
+run `pypod.py` script to create pod `kubectl apply -f pypod.py`
+```
+azureuser@master:~/pythonapp$ kubectl get pod -o wide -A
+NAMESPACE      NAME                             READY   STATUS    RESTARTS   AGE   IP           NODE      NOMINATED NODE   READINESS GATES
+default        python1                          1/1     Running   0          27s   10.244.1.2   worker1   <none>           <none>
+kube-flannel   kube-flannel-ds-42vhc            1/1     Running   1          42h   10.0.1.4     worker1   <none>           <none>
+kube-flannel   kube-flannel-ds-mkgc7            1/1     Running   2          42h   10.0.2.4     master    <none>           <none>
+kube-system    coredns-74ff55c5b-gnkjt          1/1     Running   2          42h   10.244.0.6   master    <none>           <none>
+kube-system    coredns-74ff55c5b-qb4q7          1/1     Running   2          42h   10.244.0.7   master    <none>           <none>
+kube-system    etcd-master                      1/1     Running   2          42h   10.0.2.4     master    <none>           <none>
+kube-system    kube-apiserver-master            1/1     Running   2          42h   10.0.2.4     master    <none>           <none>
+kube-system    kube-controller-manager-master   1/1     Running   2          42h   10.0.2.4     master    <none>           <none>
+kube-system    kube-proxy-hjk2w                 1/1     Running   2          42h   10.0.2.4     master    <none>           <none>
+kube-system    kube-proxy-p5mz9                 1/1     Running   1          42h   10.0.1.4     worker1   <none>           <none>
+kube-system    kube-scheduler-master            1/1     Running   2          42h   10.0.2.4     master    <none>           <none>
+```
+
+run `svcpy.py` script to create service `kubectl apply -f svcpy.py`
+```
+azureuser@master:~/pythonapp$ kubectl get svc -o wide
+NAME         TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)        AGE   SELECTOR
+kubernetes   ClusterIP   10.96.0.1       <none>        443/TCP        42h   <none>
+svcpnh       NodePort    10.98.254.120   <none>        80:31080/TCP   37s   app=app1
+```
+
+try access app from internet (need open port 31080)
+```
+azureuser@master:~/pythonapp$ curl 20.193.137.159:31080
+You access this web site version 2: 999 times.
+```
+
+you can access into container inside Pod. If Pod have many container, then specify name of container with `-c`
+```
+azureuser@master:~/pythonapp$ kubectl exec -it python1 -c py1 -- /bin/sh
+/code #
+```
+Log of pod can check by using command `kubectl logs python1`.
+```
+ * Serving Flask app "app" (lazy loading)
+ * Environment: production
+   WARNING: This is a development server. Do not use it in a production deployment.
+   Use a production WSGI server instead.
+ * Debug mode: on
+ * Running on http://0.0.0.0:8000/ (Press CTRL+C to quit)
+ * Restarting with stat
+ * Debugger is active!
+ * Debugger PIN: 705-776-349
+10.244.1.1 - - [01/Dec/2022 09:51:41] "GET / HTTP/1.1" 200 -
+10.244.1.1 - - [01/Dec/2022 09:52:04] "GET / HTTP/1.1" 200 -
+10.244.1.1 - - [01/Dec/2022 09:55:06] "GET / HTTP/1.1" 200 -
+10.244.1.1 - - [01/Dec/2022 09:55:06] "GET /favicon.ico HTTP/1.1" 404 -
+10.244.1.1 - - [01/Dec/2022 09:55:23] "GET / HTTP/1.1" 200 -
+10.244.1.1 - - [01/Dec/2022 11:17:50] "GET / HTTP/1.1" 200 -
+```
+
